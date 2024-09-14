@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Time Series Forecasting App</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Time Series Forecasting</h1>
+            <p class="subtitle">Predict the future with machine learning</p>
+        </header>
+        <main>
+            <form id="forecast-form" enctype="multipart/form-data">
+                <div class="form-group">
+                    <label for="model">Choose a model:</label>
+                    <select id="model" name="model" required>
+                        <option value="" disabled selected>Select your preferred model</option>
+                        <option value="random_forest">Random Forest</option>
+                        <option value="xgboost">XGBoost</option>
+                        <option value="lightgbm">LightGBM</option>
+                        <option value="catboost">CatBoost</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="data">Upload your CSV data:</label>
+                    <div class="file-input-wrapper">
+                        <input type="file" id="data" name="data" accept=".csv" required>
+                        <span class="file-input-label">Choose a file</span>
+                    </div>
+                </div>
+                <button type="submit">Train and Forecast</button>
+            </form>
+            <div id="result" class="hidden"></div>
+
+            <hr>
+
+            <form id="predict-form">
+                <button type="submit">Predict Next 30 Days</button>
+            </form>
+            <div id="prediction-result" class="hidden"></div>
+            <div id="plot" class="hidden"></div>
+        </main>
+    </div>
+    <script>
+        document.getElementById('forecast-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<p class="processing">Processing... Please wait.</p>';
+            resultDiv.classList.remove('hidden');
+
+            try {
+                const response = await fetch('/train', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+                }
+
+                const contentType = response.headers.get("content-type");
+                if (!contentType || !contentType.includes("application/json")) {
+                    throw new Error("Oops! We haven't received a JSON response from the server.");
+                }
+
+                const data = await response.json();
+                resultDiv.innerHTML = `<p class="success">${data.message}</p>`;
+            } catch (error) {
+                console.error('Error:', error);
+                resultDiv.innerHTML = `<p class="error">Error: ${error.message}</p>`;
+            }
+        });
+
+        document.getElementById('predict-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const modelElement = document.getElementById('model');
+            const modelType = modelElement ? modelElement.value : null;
+
+            if (!modelType) {
+                alert('Please select a model type before predicting.');
+                return;
+            }
+
+            const predictionResultDiv = document.getElementById('prediction-result');
+            const plotDiv = document.getElementById('plot');
+            predictionResultDiv.innerHTML = '<p class="processing">Processing... Please wait.</p>';
+            predictionResultDiv.classList.remove('hidden');
+            plotDiv.classList.add('hidden');
+
+            try {
+                const response = await fetch('/predict', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        model_type: modelType
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+                }
+
+                const contentType = response.headers.get("content-type");
+                if (!contentType || !contentType.includes("application/json")) {
+                    throw new Error("Oops! We haven't received a JSON response from the server.");
+                }
+
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                predictionResultDiv.innerHTML = `<p class="success">Predictions for the next 30 days:</p>`;
+                
+                // Plotting
+                plotDiv.classList.remove('hidden');
+                const trace = {
+                    x: Array.from({ length: 30 }, (_, i) => `Day ${i + 1}`),
+                    y: data.predictions,
+                    type: 'scatter'
+                };
+                const layout = {
+                    title: 'Predicted Values for the Next 30 Days',
+                    xaxis: { title: 'Days' },
+                    yaxis: { title: 'Predicted Value' }
+                };
+                Plotly.newPlot('plot', [trace], layout);
+            } catch (error) {
+                console.error('Error:', error);
+                predictionResultDiv.innerHTML = `<p class="error">Error: ${error.message}</p>`;
+            }
+        });
+
+        // Update file input label with selected filename
+        document.getElementById('data').addEventListener('change', function(e) {
+            const fileName = e.target.files[0].name;
+            document.querySelector('.file-input-label').textContent = fileName;
+        });
+    </script>
+</body>
+</html>
